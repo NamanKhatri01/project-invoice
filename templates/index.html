@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice Pipeline</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f7f7f9;
+    --panel: #ffffff;
+    --border: #e2e5ea;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #2b6cb0;
+    --danger-bg: #fdecec;
+    --danger-border: #f5c2c2;
+    --danger-text: #922020;
+    --ok-bg: #eaf6ee;
+    --ok-text: #1f6b3a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+    line-height: 1.5;
+  }
+  .container { max-width: 1080px; margin: 0 auto; }
+  h1 { margin-top: 0; font-size: 1.75rem; }
+  .lede { color: var(--muted); margin-bottom: 2rem; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  h2 { margin-top: 0; font-size: 1.15rem; }
+  form.upload { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+  input[type="file"] { flex: 1; min-width: 240px; }
+  button {
+    background: var(--accent); color: white; border: 0;
+    padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer;
+    font-size: 0.95rem;
+  }
+  button:hover { background: #1f5a94; }
+  .error {
+    background: var(--danger-bg); border: 1px solid var(--danger-border);
+    color: var(--danger-text); padding: 0.75rem 1rem; border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .field-grid dt { color: var(--muted); font-size: 0.82rem; margin: 0; }
+  .field-grid dd { margin: 0 0 0.5rem; font-weight: 600; }
+  .badge {
+    display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px;
+    font-size: 0.8rem; font-weight: 600;
+  }
+  .badge.ok { background: var(--ok-bg); color: var(--ok-text); }
+  .badge.bad { background: var(--danger-bg); color: var(--danger-text); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { border-bottom: 1px solid var(--border); padding: 0.55rem 0.6rem; text-align: left; }
+  th { background: #f0f2f5; font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  tr.bad td { background: #fef4f4; }
+  .reason { color: var(--danger-text); font-size: 0.85rem; }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  .actions { margin-top: 0.75rem; }
+  a.btn-link {
+    display: inline-block; color: var(--accent); text-decoration: none;
+    font-weight: 600; font-size: 0.9rem;
+  }
+  a.btn-link:hover { text-decoration: underline; }
+  pre.raw {
+    background: #0f1116; color: #d8dbe0;
+    padding: 0.9rem 1rem; border-radius: 6px;
+    overflow-x: auto; font-size: 0.82rem; line-height: 1.45;
+    max-height: 260px;
+  }
+  details summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; }
+  .items-table th, .items-table td { font-size: 0.85rem; padding: 0.35rem 0.55rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Invoice Pipeline</h1>
+  <p class="lede">Upload an invoice image to see the extracted fields and rule based checks, or scroll down to browse the sample batch results.</p>
+
+  <div class="panel">
+    <h2>Upload an invoice</h2>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form class="upload" action="/upload" method="post" enctype="multipart/form-data">
+      <input type="file" name="invoice" accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff" required>
+      <button type="submit">Extract</button>
+    </form>
+    <p class="muted" style="margin-top: 0.75rem;">Accepted formats: PNG, JPG, BMP, TIFF. Max 8 MB. Files are processed in memory and discarded after the response.</p>
+  </div>
+
+  {% if result %}
+  <div class="panel">
+    <h2>Extraction result for "{{ result.display_name }}"</h2>
+    <p>
+      {% if result.is_anomaly %}
+        <span class="badge bad">Flagged</span>
+      {% else %}
+        <span class="badge ok">Looks fine</span>
+      {% endif %}
+    </p>
+    <dl class="field-grid">
+      <div><dt>Invoice number</dt><dd>{{ result.invoice_number or "—" }}</dd></div>
+      <div><dt>Vendor</dt><dd>{{ result.vendor or "—" }}</dd></div>
+      <div><dt>Invoice date</dt><dd>{{ result.invoice_date or "—" }}</dd></div>
+      <div><dt>Grand total</dt><dd>{{ "%.2f"|format(result.grand_total) if result.grand_total is not none else "—" }}</dd></div>
+      <div><dt>Line item count</dt><dd>{{ result.line_item_count }}</dd></div>
+      <div><dt>Sum of line totals</dt><dd>{{ "%.2f"|format(result.sum_line_totals) }}</dd></div>
+    </dl>
+    {% if result.anomaly_reason %}
+      <p class="reason"><strong>Reasons:</strong> {{ result.anomaly_reason }}</p>
+    {% endif %}
+
+    {% if result.line_items %}
+      <h3 style="margin-bottom: 0.5rem;">Line items</h3>
+      <table class="items-table">
+        <thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead>
+        <tbody>
+          {% for item in result.line_items %}
+            <tr>
+              <td>{{ item.description }}</td>
+              <td>{{ item.quantity }}</td>
+              <td>{{ "%.2f"|format(item.unit_price) }}</td>
+              <td>{{ "%.2f"|format(item.line_total) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+
+    <details style="margin-top: 1rem;">
+      <summary>Show raw OCR text</summary>
+      <pre class="raw">{{ result.raw_text }}</pre>
+    </details>
+    <p class="muted" style="margin-top: 0.75rem;">Note: Isolation Forest and cross-invoice duplicate detection only run in the batch pipeline (<code>run_pipeline.py</code>). Single uploads use rule based checks only.</p>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h2>Sample batch results</h2>
+    <p class="muted">Pre-computed output from <code>python src/run_pipeline.py</code> over 51 synthetic invoices.</p>
+    {% if sample_rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>File</th><th>Invoice #</th><th>Vendor</th><th>Date</th>
+          <th>Total</th><th>Lines</th><th>Status</th><th>Reasons</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in sample_rows %}
+          <tr class="{{ 'bad' if row.is_anomaly in [true, 'True', 1] else '' }}">
+            <td>{{ row.source_file }}</td>
+            <td>{{ row.invoice_number }}</td>
+            <td>{{ row.vendor }}</td>
+            <td>{{ row.invoice_date }}</td>
+            <td>{{ row.grand_total }}</td>
+            <td>{{ row.line_item_count }}</td>
+            <td>
+              {% if row.is_anomaly in [true, 'True', 1] %}
+                <span class="badge bad">Flagged</span>
+              {% else %}
+                <span class="badge ok">OK</span>
+              {% endif %}
+            </td>
+            <td class="reason">{{ row.anomaly_reason }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="actions"><a class="btn-link" href="/download">Download CSV</a></div>
+    {% else %}
+      <p class="muted">No sample output found. Run <code>python src/run_pipeline.py</code> locally to generate it.</p>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>
